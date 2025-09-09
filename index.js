@@ -1,7 +1,14 @@
 const { Client, GatewayIntentBits } = require('discord.js');
 const express = require('express');
 
-const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.MessageContent, GatewayIntentBits.MessageCreate] });
+// The intents are now being passed correctly to the Discord.js client
+const client = new Client({ 
+    intents: [
+        GatewayIntentBits.Guilds, 
+        GatewayIntentBits.MessageContent, 
+        GatewayIntentBits.MessageCreate
+    ] 
+});
 
 // Use an environment variable for the port, as provided by Render
 const app = express();
