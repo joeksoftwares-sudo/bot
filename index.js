@@ -5,8 +5,8 @@ const express = require('express');
 const client = new Client({ 
     intents: [
         GatewayIntentBits.Guilds, 
-        GatewayIntentBits.MessageContent, 
-        GatewayIntentBits.MessageCreate
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.MessageContent
     ] 
 });
 
