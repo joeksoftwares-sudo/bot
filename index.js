@@ -1,13 +1,16 @@
 const { Client, GatewayIntentBits } = require('discord.js');
 const express = require('express');
 
-// The intents are now being passed correctly to the Discord.js client
-const client = new Client({ 
+// Create variables to store the current invite and its creation timestamp.
+let currentInvite = null;
+let inviteCreationTime = 0;
+
+const client = new Client({
     intents: [
-        GatewayIntentBits.Guilds, 
+        GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent
-    ] 
+    ]
 });
 
 // Use an environment variable for the port, as provided by Render
@@ -18,13 +21,18 @@ client.on('ready', () => {
     console.log(`Logged in as ${client.user.tag}!`);
 });
 
-// A new web endpoint that the website can call to get an invite
+// The web endpoint that the website can call to get an invite
 app.get('/invite', async (req, res) => {
-    // Acknowledge the request
-    res.setHeader('Content-Type', 'application/json');
-    res.setHeader('Access-Control-Allow-Origin', '*'); // This is needed to allow the website to connect
+    // Check if a valid invite exists and is less than 10 minutes old (600,000 milliseconds)
+    const now = Date.now();
+    if (currentInvite && (now - inviteCreationTime < 600000)) {
+        // If the invite is still valid, send the cached URL
+        return res.status(200).json({ invite_url: currentInvite.url });
+    }
 
-    // Find the first available text channel to create an invite
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+
     const channel = client.channels.cache.find(c => c.type === 0 && c.guild.id === process.env.GUILD_ID && c.permissionsFor(client.user).has('CREATE_INSTANT_INVITE'));
 
     if (!channel) {
@@ -37,6 +45,11 @@ app.get('/invite', async (req, res) => {
             unique: true,
             reason: "Website-generated invite."
         });
+
+        // Cache the newly created invite and the current time
+        currentInvite = invite;
+        inviteCreationTime = now;
+
         res.status(200).json({ invite_url: invite.url });
     } catch (error) {
         console.error('Error creating invite:', error);
@@ -57,11 +70,22 @@ client.on('messageCreate', async (message) => {
         if (!message.channel.permissionsFor(client.user).has('CREATE_INSTANT_INVITE')) {
             return message.reply("I don't have the permission to create invite links in this channel!");
         }
+
+        // Use the same caching logic for the command
+        const now = Date.now();
+        if (currentInvite && (now - inviteCreationTime < 600000)) {
+            return message.channel.send(`Here's your one-time invite link: ${currentInvite.url}`);
+        }
+
         try {
             const invite = await message.channel.createInvite({
                 maxUses: 1,
                 unique: true
             });
+
+            currentInvite = invite;
+            inviteCreationTime = now;
+
             message.channel.send(`Here's your one-time invite link: ${invite.url}`);
         } catch (error) {
             console.error('Error creating invite:', error);
