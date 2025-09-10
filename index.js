@@ -1,5 +1,6 @@
 const { Client, GatewayIntentBits } = require('discord.js');
 const express = require('express');
+const rateLimit = require('express-rate-limit');
 
 // Create variables to store the current invite and its creation timestamp.
 let currentInvite = null;
@@ -13,25 +14,35 @@ const client = new Client({
     ]
 });
 
-// Use an environment variable for the port, as provided by Render
 const app = express();
 const port = process.env.PORT || 3000;
+
+// Set up the rate limiter middleware to protect against DDoS
+const apiLimiter = rateLimit({
+    windowMs: 60 * 1000, // 1 minute
+    max: 5, // Limit each IP to 5 requests per `windowMs`
+    standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
+    legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+    message: {
+        error: "Too many requests from this IP, please try again after a minute."
+    }
+});
 
 client.on('ready', () => {
     console.log(`Logged in as ${client.user.tag}!`);
 });
 
-// The web endpoint that the website can call to get an invite
-app.get('/invite', async (req, res) => {
-    // Check if a valid invite exists and is less than 10 minutes old (600,000 milliseconds)
+// Apply the rate limiter to the invite endpoint
+app.get('/invite', apiLimiter, async (req, res) => {
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+
+    // Check if a valid invite exists and is less than 10 seconds old (10,000 milliseconds)
     const now = Date.now();
-    if (currentInvite && (now - inviteCreationTime < 600000)) {
+    if (currentInvite && (now - inviteCreationTime < 10000)) {
         // If the invite is still valid, send the cached URL
         return res.status(200).json({ invite_url: currentInvite.url });
     }
-
-    res.setHeader('Content-Type', 'application/json');
-    res.setHeader('Access-Control-Allow-Origin', '*');
 
     const channel = client.channels.cache.find(c => c.type === 0 && c.guild.id === process.env.GUILD_ID && c.permissionsFor(client.user).has('CREATE_INSTANT_INVITE'));
 
@@ -71,20 +82,11 @@ client.on('messageCreate', async (message) => {
             return message.reply("I don't have the permission to create invite links in this channel!");
         }
 
-        // Use the same caching logic for the command
-        const now = Date.now();
-        if (currentInvite && (now - inviteCreationTime < 600000)) {
-            return message.channel.send(`Here's your one-time invite link: ${currentInvite.url}`);
-        }
-
         try {
             const invite = await message.channel.createInvite({
                 maxUses: 1,
                 unique: true
             });
-
-            currentInvite = invite;
-            inviteCreationTime = now;
 
             message.channel.send(`Here's your one-time invite link: ${invite.url}`);
         } catch (error) {
